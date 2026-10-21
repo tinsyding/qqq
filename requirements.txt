@@ -1,0 +1,6 @@
+customtkinter==6.0.0
+keyboard==0.13.5
+mouse==0.7.1
+pyperclip==1.11.0
+darkdetect==0.8.0
+pyinstaller==6.22.3

@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# PyInstaller 构建产物
+build/
+dist/
+*.manifest
+
+# 运行时/本地配置
+*.log
+
+# IDE / 系统文件
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# 本工具（Command Code）的本地会话数据
+.commandcode/
+
+# Android / Gradle
+.gradle/
+local.properties
+.kotlin/
+*.apk
+*.aab
+*.jks
+*.keystore

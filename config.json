@@ -1,0 +1,11 @@
+{
+  "hotkey": "ctrl+tab",
+  "enable_hotkey": false,
+  "trigger_word": "qqq",
+  "enable_trigger_word": true,
+  "template": "本次作业的错题题号为：{nums}",
+  "separator": "，",
+  "split_mode": "smart",
+  "no_selection_mode": true,
+  "auto_copy_only": false
+}
