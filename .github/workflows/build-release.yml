@@ -39,6 +39,8 @@ jobs:
   build-android:
     name: Build Android APK
     runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
     defaults:
       run:
         working-directory: android_app
@@ -51,12 +53,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -79,6 +75,7 @@ jobs:
   release:
     name: Publish Release
     needs: [build-windows, build-android]
+    if: always() && (needs.build-windows.result == 'success' || needs.build-android.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
