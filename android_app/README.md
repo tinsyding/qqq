@@ -1,6 +1,6 @@
 # 错题快速转换助手 - 安卓端
 
-Windows 版错题快速转换助手的 Android 原生移植版本，基于 Kotlin 与 Android 无障碍服务（AccessibilityService）开发。在手机端各输入场景（微信、QQ、钉钉、备忘录等）中，键入如 `135qqq` 后可自动退格并展开为预设文案。
+Windows 版错题快速转换助手的 Android 原生移植版本，基于 Kotlin 与 Android 无障碍服务（AccessibilityService）开发。在安卓端爱问云中，键入如 `135qqq` 后可自动退格并展开为预设文案。
 
 ## 功能特点
 
