@@ -4,8 +4,11 @@ main.py
 基于 CustomTkinter 构建，提供后缀触发词与全局快捷键配置、文案模板定制及实时预览。
 """
 
+import os
+import sys
 import threading
 import tkinter as tk
+import traceback
 from tkinter import messagebox
 
 import customtkinter as ctk
@@ -94,17 +97,21 @@ class ModernHotkeyApp(ctk.CTk):
         card.pack(fill="x", pady=(0, bottom_gap))
         return card
 
-    def _make_keycap(self, parent, text: str) -> ctk.CTkLabel:
-        return ctk.CTkLabel(
+    def _make_keycap(self, parent, text: str) -> ctk.CTkFrame:
+        cap = ctk.CTkFrame(
             parent,
+            corner_radius=6,
+            fg_color=PALETTE["surface"],
+            border_width=1,
+            border_color=PALETTE["border"],
+        )
+        ctk.CTkLabel(
+            cap,
             text=text,
             font=self.font_mono,
-            fg_color=PALETTE["surface"],
             text_color=PALETTE["text_primary"],
-            corner_radius=6,
-            padx=8,
-            pady=2,
-        )
+        ).pack(padx=8, pady=2)
+        return cap
 
     def _secondary_button_kwargs(self) -> dict:
         return {
@@ -770,6 +777,32 @@ class ModernHotkeyApp(ctk.CTk):
         self.destroy()
 
 
+def _report_fatal_error(err: Exception):
+    """在无控制台模式下记录启动异常并弹窗提示"""
+    base_dir = (
+        os.path.dirname(os.path.abspath(sys.executable))
+        if getattr(sys, "frozen", False)
+        else os.path.dirname(os.path.abspath(__file__))
+    )
+    log_path = os.path.join(base_dir, "crash.log")
+    detail = traceback.format_exc()
+    try:
+        with open(log_path, "w", encoding="utf-8") as f:
+            f.write(detail)
+    except Exception:
+        pass
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("启动失败", f"程序启动异常：{err}\n\n详细日志已保存至：\n{log_path}")
+        root.destroy()
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
-    app = ModernHotkeyApp()
-    app.mainloop()
+    try:
+        app = ModernHotkeyApp()
+        app.mainloop()
+    except Exception as exc:
+        _report_fatal_error(exc)

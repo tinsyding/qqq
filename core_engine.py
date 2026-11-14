@@ -18,8 +18,13 @@ import keyboard
 import mouse
 import pyperclip
 
-# 配置文件路径
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+# 配置文件路径（兼容 PyInstaller 单文件打包，优先保存在 EXE 同级目录）
+_BASE_DIR = (
+    os.path.dirname(os.path.abspath(sys.executable))
+    if getattr(sys, "frozen", False)
+    else os.path.dirname(os.path.abspath(__file__))
+)
+CONFIG_FILE = os.path.join(_BASE_DIR, "config.json")
 
 DEFAULT_CONFIG = {
     "hotkey": "alt+q",
