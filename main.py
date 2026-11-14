@@ -1,26 +1,18 @@
 """
 main.py
-错题题号快速转换助手 - 现代精美 GUI 界面（大字体舒适版）
-采用 CustomTkinter 打造现代化 Fluent/macOS 质感桌面 UI：
-- 放大字体层次，清晰醒目，阅读不费眼
-- 支持浅色/深色主题自由切换
-- 支持后缀触发词（如 135qqq）与全局快捷键（如 Alt+Q）
-- 模块化卡片布局、圆角按键、平滑开关与实时测试预览
+错题题号转换助手 - Windows 桌面界面
+基于 CustomTkinter 构建，提供后缀触发词与全局快捷键配置、文案模板定制及实时预览。
 """
 
-import os
-import sys
 import threading
 import tkinter as tk
 from tkinter import messagebox
-from typing import Optional
 
 import customtkinter as ctk
 import keyboard
 import pyperclip
 
 from core_engine import (
-    DEFAULT_CONFIG,
     HotkeyManager,
     format_output,
     load_config,
@@ -28,290 +20,374 @@ from core_engine import (
     save_config,
 )
 
-# 设置主题风格
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
+
+# Warm Paper (Light) / Warm Graphite (Dark) 色阶
+PALETTE = {
+    "bg": ("#F7F4EE", "#161513"),
+    "card": ("#FDFBF7", "#1C1A18"),
+    "surface": ("#F2EDE4", "#262421"),
+    "surface_hover": ("#E8E1D5", "#302D29"),
+    "border": ("#E4DDD0", "#2E2B27"),
+    "text_primary": ("#1F1B16", "#EFE9DE"),
+    "text_secondary": ("#5E554A", "#AAA398"),
+    "text_muted": ("#7B7266", "#8A847A"),
+    "accent": ("#2563EB", "#3B82F6"),
+    "accent_hover": ("#1D4ED8", "#2563EB"),
+    "positive": ("#16A34A", "#4ADE80"),
+    "negative": ("#DC2626", "#F87171"),
+    "warning": ("#B45309", "#FBBF24"),
+}
 
 
 class ModernHotkeyApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("错题输入快速转换助手")
-        # 放大窗口尺寸以适配更大字体
-        self.geometry("700x860")
-        self.minsize(640, 780)
+        self.title("错题题号转换助手")
+        self.geometry("720x820")
+        self.minsize(640, 740)
+        self.configure(fg_color=PALETTE["bg"])
 
-        # 加载配置
         self.config_data = load_config()
-
-        # 录制状态标识
         self.is_recording = False
         self.recording_thread = None
 
-        # ---------------- 字体设定（大号清晰版） ----------------
+        # 字体体系：以字号与色彩区分层次，减少粗体滥用
         self.font_title = ctk.CTkFont(family="Microsoft YaHei UI", size=20, weight="bold")
-        self.font_subtitle = ctk.CTkFont(family="Microsoft YaHei UI", size=16, weight="bold")
+        self.font_section = ctk.CTkFont(family="Microsoft YaHei UI", size=15, weight="bold")
         self.font_normal = ctk.CTkFont(family="Microsoft YaHei UI", size=14)
-        self.font_bold = ctk.CTkFont(family="Microsoft YaHei UI", size=14, weight="bold")
+        self.font_label = ctk.CTkFont(family="Microsoft YaHei UI", size=13)
         self.font_small = ctk.CTkFont(family="Microsoft YaHei UI", size=12)
-        self.font_mono = ctk.CTkFont(family="Consolas", size=15, weight="bold")
+        self.font_mono = ctk.CTkFont(family="Consolas", size=13)
+        self.font_preview = ctk.CTkFont(family="Microsoft YaHei UI", size=15)
 
-        # 构建现代化 UI
         self._create_widgets()
 
-        # 初始化后台监听管理器
         self.hotkey_mgr = HotkeyManager(
             config_getter=lambda: self.config_data,
             on_status_change=self._on_hotkey_status_changed,
         )
-
-        # 启动热键与输入监听
         self.after(100, self.hotkey_mgr.start)
-
-        # 关闭清理
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _create_widgets(self):
         self.main_scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        self.main_scroll.pack(fill="both", expand=True, padx=16, pady=12)
+        self.main_scroll.pack(fill="both", expand=True, padx=24, pady=(16, 8))
 
-        # 1. 顶部 Header 品牌与控制栏
         self._build_header(self.main_scroll)
-
-        # 2. 状态胶囊栏
-        self._build_status_pill(self.main_scroll)
-
-        # 3. 核心触发方式卡片（后缀词 qqq 与快捷键）
+        self._build_status_bar(self.main_scroll)
         self._build_trigger_card(self.main_scroll)
-
-        # 4. 文案模板与格式规则卡片
         self._build_template_card(self.main_scroll)
-
-        # 5. 实时测试与预览卡片
         self._build_test_card(self.main_scroll)
-
-        # 6. 底部工具栏与操作提示
         self._build_footer(self)
+
+    def _make_card(self, parent, bottom_gap: int = 16) -> ctk.CTkFrame:
+        card = ctk.CTkFrame(
+            parent,
+            corner_radius=12,
+            fg_color=PALETTE["card"],
+            border_width=1,
+            border_color=PALETTE["border"],
+        )
+        card.pack(fill="x", pady=(0, bottom_gap))
+        return card
+
+    def _make_keycap(self, parent, text: str) -> ctk.CTkLabel:
+        return ctk.CTkLabel(
+            parent,
+            text=text,
+            font=self.font_mono,
+            fg_color=PALETTE["surface"],
+            text_color=PALETTE["text_primary"],
+            corner_radius=6,
+            padx=8,
+            pady=2,
+        )
+
+    def _secondary_button_kwargs(self) -> dict:
+        return {
+            "corner_radius": 8,
+            "font": self.font_label,
+            "fg_color": PALETTE["surface"],
+            "text_color": PALETTE["text_primary"],
+            "hover_color": PALETTE["surface_hover"],
+            "border_width": 1,
+            "border_color": PALETTE["border"],
+        }
 
     # ---------------- 页面模块构建 ----------------
 
     def _build_header(self, parent):
-        header_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        header_frame.pack(fill="x", pady=(4, 12))
+        header = ctk.CTkFrame(parent, fg_color="transparent")
+        header.pack(fill="x", pady=(4, 16))
 
-        # 左侧标题与副标题
-        title_box = ctk.CTkFrame(header_frame, fg_color="transparent")
+        title_box = ctk.CTkFrame(header, fg_color="transparent")
         title_box.pack(side="left", fill="y")
 
-        lbl_app_title = ctk.CTkLabel(
+        ctk.CTkLabel(
             title_box,
-            text="✍️ 错题输入快速转换助手",
+            text="错题题号转换助手",
             font=self.font_title,
-            text_color=("#1E293B", "#F8FAFC"),
-        )
-        lbl_app_title.pack(anchor="w")
+            text_color=PALETTE["text_primary"],
+        ).pack(anchor="w")
 
-        lbl_app_sub = ctk.CTkLabel(
+        ctk.CTkLabel(
             title_box,
-            text="无需选中 · 连敲 qqq 自动展开 · 支持全局快捷键与多模板定制",
+            text="在批改输入框键入数字与触发词，自动展开为规范评语",
             font=self.font_small,
-            text_color=("#64748B", "#94A3B8"),
-        )
-        lbl_app_sub.pack(anchor="w", pady=(2, 0))
+            text_color=PALETTE["text_muted"],
+        ).pack(anchor="w", pady=(4, 0))
 
-        # 右侧主题切换
         self.theme_menu = ctk.CTkOptionMenu(
-            header_frame,
+            header,
             values=["浅色模式", "深色模式", "跟随系统"],
-            width=110,
+            width=112,
             height=32,
-            font=self.font_normal,
+            corner_radius=8,
+            font=self.font_label,
+            fg_color=PALETTE["surface"],
+            button_color=PALETTE["surface"],
+            button_hover_color=PALETTE["surface_hover"],
+            text_color=PALETTE["text_primary"],
             command=self._change_appearance_mode,
         )
         self.theme_menu.set("浅色模式")
-        self.theme_menu.pack(side="right", padx=(8, 0))
+        self.theme_menu.pack(side="right", anchor="n")
 
-    def _build_status_pill(self, parent):
-        self.status_card = ctk.CTkFrame(
-            parent,
-            corner_radius=12,
-            fg_color=("#F0FDF4", "#064E3B"),
-            border_width=1,
-            border_color=("#BBF7D0", "#059669"),
-        )
-        self.status_card.pack(fill="x", pady=(0, 14), ipady=6)
+    def _build_status_bar(self, parent):
+        self.status_card = self._make_card(parent, bottom_gap=16)
+
+        inner = ctk.CTkFrame(self.status_card, fg_color="transparent")
+        inner.pack(fill="x", padx=16, pady=12)
 
         self.lbl_status_dot = ctk.CTkLabel(
-            self.status_card,
+            inner,
             text="●",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=("#16A34A", "#4ADE80"),
+            font=ctk.CTkFont(size=12),
+            text_color=PALETTE["positive"],
         )
-        self.lbl_status_dot.pack(side="left", padx=(14, 4))
+        self.lbl_status_dot.pack(side="left", padx=(0, 8))
 
         self.lbl_status_text = ctk.CTkLabel(
-            self.status_card,
-            text="正在启动后台监听...",
-            font=self.font_bold,
-            text_color=("#166534", "#D1FAE5"),
+            inner,
+            text="正在启动后台监听",
+            font=self.font_normal,
+            text_color=PALETTE["text_primary"],
         )
-        self.lbl_status_text.pack(side="left", padx=4)
+        self.lbl_status_text.pack(side="left")
 
         self.btn_toggle_listen = ctk.CTkButton(
-            self.status_card,
+            inner,
             text="暂停监听",
             width=96,
             height=32,
-            corner_radius=8,
-            font=self.font_normal,
-            fg_color=("#DC2626", "#B91C1C"),
-            hover_color=("#B91C1C", "#991B1B"),
             command=self._toggle_listener,
+            **self._secondary_button_kwargs(),
         )
-        self.btn_toggle_listen.pack(side="right", padx=12)
+        self.btn_toggle_listen.pack(side="right")
 
     def _build_trigger_card(self, parent):
-        card = ctk.CTkFrame(parent, corner_radius=14, fg_color=("#FFFFFF", "#1E293B"))
-        card.pack(fill="x", pady=(0, 14), padx=2, ipady=6)
+        card = self._make_card(parent, bottom_gap=16)
+        body = ctk.CTkFrame(card, fg_color="transparent")
+        body.pack(fill="x", padx=16, pady=16)
 
-        # 标题栏
-        lbl_head = ctk.CTkLabel(card, text="⚡ 快捷触发方式设置", font=self.font_subtitle, text_color=("#1E293B", "#F8FAFC"))
-        lbl_head.pack(anchor="w", padx=16, pady=(12, 8))
+        ctk.CTkLabel(
+            body,
+            text="触发方式",
+            font=self.font_section,
+            text_color=PALETTE["text_primary"],
+        ).pack(anchor="w", pady=(0, 12))
 
-        # 方式 1：后缀触发词（如 qqq）
-        box1 = ctk.CTkFrame(card, corner_radius=10, fg_color=("#F8FAFC", "#0F172A"), border_width=1, border_color=("#E2E8F0", "#334155"))
-        box1.pack(fill="x", padx=14, pady=(4, 10), ipadx=8, ipady=10)
+        # 方式 1：后缀触发词
+        box1 = ctk.CTkFrame(
+            body,
+            corner_radius=8,
+            fg_color=PALETTE["surface"],
+            border_width=1,
+            border_color=PALETTE["border"],
+        )
+        box1.pack(fill="x", pady=(0, 12))
 
-        row1 = ctk.CTkFrame(box1, fg_color="transparent")
-        row1.pack(fill="x")
+        box1_inner = ctk.CTkFrame(box1, fg_color="transparent")
+        box1_inner.pack(fill="x", padx=12, pady=12)
 
         self.switch_trigger = ctk.CTkSwitch(
-            row1,
-            text="启用后缀连续敲击展开（极速推荐）",
-            font=self.font_bold,
-            text_color=("#2563EB", "#60A5FA"),
+            box1_inner,
+            text="后缀触发词",
+            font=self.font_normal,
+            text_color=PALETTE["text_primary"],
+            progress_color=PALETTE["accent"],
             command=self._on_trigger_config_changed,
         )
         if self.config_data.get("enable_trigger_word", True):
             self.switch_trigger.select()
         else:
             self.switch_trigger.deselect()
-        self.switch_trigger.pack(side="left", padx=4)
+        self.switch_trigger.pack(anchor="w")
 
-        row_input = ctk.CTkFrame(box1, fg_color="transparent")
-        row_input.pack(fill="x", pady=(10, 0))
+        row_trig = ctk.CTkFrame(box1_inner, fg_color="transparent")
+        row_trig.pack(fill="x", pady=(12, 0))
 
-        ctk.CTkLabel(row_input, text="触发字符：", font=self.font_normal).pack(side="left", padx=(4, 2))
+        ctk.CTkLabel(
+            row_trig,
+            text="触发字符",
+            font=self.font_label,
+            text_color=PALETTE["text_secondary"],
+        ).pack(side="left", padx=(0, 8))
+
         self.entry_trigger_word = ctk.CTkEntry(
-            row_input,
-            width=90,
+            row_trig,
+            width=96,
             height=36,
             font=self.font_mono,
             corner_radius=8,
+            fg_color=PALETTE["card"],
+            border_color=PALETTE["border"],
+            text_color=PALETTE["text_primary"],
             justify="center",
         )
         self.entry_trigger_word.insert(0, self.config_data.get("trigger_word", "qqq"))
-        self.entry_trigger_word.pack(side="left", padx=4)
+        self.entry_trigger_word.pack(side="left", padx=(0, 8))
         self.entry_trigger_word.bind("<KeyRelease>", lambda e: self._on_trigger_config_changed())
 
-        btn_save_trig = ctk.CTkButton(
-            row_input,
-            text="保存触发词",
-            width=96,
+        ctk.CTkButton(
+            row_trig,
+            text="保存",
+            width=72,
             height=36,
-            corner_radius=8,
-            font=self.font_normal,
             command=self._on_trigger_config_changed,
-        )
-        btn_save_trig.pack(side="left", padx=6)
+            **self._secondary_button_kwargs(),
+        ).pack(side="left")
 
-        keycap_badge = ctk.CTkLabel(
-            row_input,
-            text="示例：键入 [ 135 ] + [ qqq ]  ➔  自动展开",
+        example_row = ctk.CTkFrame(row_trig, fg_color="transparent")
+        example_row.pack(side="right")
+        ctk.CTkLabel(
+            example_row,
+            text="示例",
             font=self.font_small,
-            text_color=("#64748B", "#94A3B8"),
+            text_color=PALETTE["text_muted"],
+        ).pack(side="left", padx=(0, 8))
+        self._make_keycap(example_row, "135").pack(side="left")
+        ctk.CTkLabel(
+            example_row,
+            text="+",
+            font=self.font_small,
+            text_color=PALETTE["text_muted"],
+        ).pack(side="left", padx=4)
+        self._make_keycap(example_row, self.config_data.get("trigger_word", "qqq")).pack(side="left")
+        ctk.CTkLabel(
+            example_row,
+            text="自动展开",
+            font=self.font_small,
+            text_color=PALETTE["text_muted"],
+        ).pack(side="left", padx=(8, 0))
+
+        # 方式 2：全局快捷键
+        box2 = ctk.CTkFrame(
+            body,
+            corner_radius=8,
+            fg_color=PALETTE["surface"],
+            border_width=1,
+            border_color=PALETTE["border"],
         )
-        keycap_badge.pack(side="right", padx=6)
+        box2.pack(fill="x")
 
-        # 方式 2：键盘快捷键
-        box2 = ctk.CTkFrame(card, corner_radius=10, fg_color=("#F8FAFC", "#0F172A"), border_width=1, border_color=("#E2E8F0", "#334155"))
-        box2.pack(fill="x", padx=14, pady=(4, 14), ipadx=8, ipady=10)
-
-        row2 = ctk.CTkFrame(box2, fg_color="transparent")
-        row2.pack(fill="x")
+        box2_inner = ctk.CTkFrame(box2, fg_color="transparent")
+        box2_inner.pack(fill="x", padx=12, pady=12)
 
         self.switch_hotkey = ctk.CTkSwitch(
-            row2,
-            text="启用键盘全局快捷键",
-            font=self.font_bold,
+            box2_inner,
+            text="全局快捷键",
+            font=self.font_normal,
+            text_color=PALETTE["text_primary"],
+            progress_color=PALETTE["accent"],
             command=self._on_trigger_config_changed,
         )
         if self.config_data.get("enable_hotkey", True):
             self.switch_hotkey.select()
         else:
             self.switch_hotkey.deselect()
-        self.switch_hotkey.pack(side="left", padx=4)
+        self.switch_hotkey.pack(anchor="w")
 
-        row_hk = ctk.CTkFrame(box2, fg_color="transparent")
-        row_hk.pack(fill="x", pady=(10, 0))
+        row_hk = ctk.CTkFrame(box2_inner, fg_color="transparent")
+        row_hk.pack(fill="x", pady=(12, 0))
 
-        ctk.CTkLabel(row_hk, text="当前快捷键：", font=self.font_normal).pack(side="left", padx=(4, 2))
+        ctk.CTkLabel(
+            row_hk,
+            text="当前按键",
+            font=self.font_label,
+            text_color=PALETTE["text_secondary"],
+        ).pack(side="left", padx=(0, 8))
+
         self.entry_hotkey = ctk.CTkEntry(
             row_hk,
-            width=130,
+            width=128,
             height=36,
             font=self.font_mono,
             corner_radius=8,
+            fg_color=PALETTE["card"],
+            border_color=PALETTE["border"],
+            text_color=PALETTE["text_primary"],
             justify="center",
         )
-        self.entry_hotkey.insert(0, self.config_data.get("hotkey", "alt+q").upper())
-        self.entry_hotkey.pack(side="left", padx=4)
+        self.entry_hotkey.insert(0, self.config_data.get("hotkey", "alt+q"))
+        self.entry_hotkey.pack(side="left", padx=(0, 8))
 
         self.btn_record = ctk.CTkButton(
             row_hk,
-            text="🎙️ 录制新按键",
-            width=100,
+            text="录制按键",
+            width=96,
             height=36,
             corner_radius=8,
-            font=self.font_normal,
-            fg_color=("#3B82F6", "#2563EB"),
+            font=self.font_label,
+            fg_color=PALETTE["accent"],
+            hover_color=PALETTE["accent_hover"],
+            text_color="#FFFFFF",
             command=self._start_record_hotkey,
         )
-        self.btn_record.pack(side="left", padx=6)
+        self.btn_record.pack(side="left", padx=(0, 8))
 
-        btn_apply_hk = ctk.CTkButton(
+        ctk.CTkButton(
             row_hk,
             text="应用",
-            width=66,
+            width=72,
             height=36,
-            corner_radius=8,
-            font=self.font_normal,
-            fg_color=("#64748B", "#475569"),
             command=self._save_manual_hotkey,
-        )
-        btn_apply_hk.pack(side="left", padx=2)
+            **self._secondary_button_kwargs(),
+        ).pack(side="left")
 
         self.lbl_hk_tip = ctk.CTkLabel(
-            box2,
-            text="打出数字后按此键自动就地替换（亦支持划选旧文本后按键替换）",
+            box2_inner,
+            text="键入数字后按此快捷键原地替换，也支持划选文本后替换",
             font=self.font_small,
-            text_color=("#64748B", "#94A3B8"),
+            text_color=PALETTE["text_muted"],
         )
-        self.lbl_hk_tip.pack(anchor="w", padx=4, pady=(8, 0))
+        self.lbl_hk_tip.pack(anchor="w", pady=(8, 0))
 
     def _build_template_card(self, parent):
-        card = ctk.CTkFrame(parent, corner_radius=14, fg_color=("#FFFFFF", "#1E293B"))
-        card.pack(fill="x", pady=(0, 14), padx=2, ipady=6)
+        card = self._make_card(parent, bottom_gap=16)
+        body = ctk.CTkFrame(card, fg_color="transparent")
+        body.pack(fill="x", padx=16, pady=16)
 
-        lbl_head = ctk.CTkLabel(card, text="📝 文案模板与格式规则", font=self.font_subtitle, text_color=("#1E293B", "#F8FAFC"))
-        lbl_head.pack(anchor="w", padx=16, pady=(12, 8))
+        ctk.CTkLabel(
+            body,
+            text="文案模板与格式",
+            font=self.font_section,
+            text_color=PALETTE["text_primary"],
+        ).pack(anchor="w", pady=(0, 12))
 
-        # 预设模板选择栏
-        row_preset = ctk.CTkFrame(card, fg_color="transparent")
-        row_preset.pack(fill="x", padx=14, pady=(2, 8))
+        # 预设模板
+        row_preset = ctk.CTkFrame(body, fg_color="transparent")
+        row_preset.pack(fill="x", pady=(0, 12))
 
-        ctk.CTkLabel(row_preset, text="快捷预设：", font=self.font_small, text_color=("#64748B", "#94A3B8")).pack(side="left", padx=(2, 6))
+        ctk.CTkLabel(
+            row_preset,
+            text="快捷预设",
+            font=self.font_label,
+            text_color=PALETTE["text_secondary"],
+        ).pack(side="left", padx=(0, 8))
 
         presets = [
             ("题号模板", "本次作业的错题题号为：{nums}"),
@@ -319,55 +395,68 @@ class ModernHotkeyApp(ctk.CTk):
             ("简洁订正", "错题订正：{nums}"),
         ]
         for name, tmpl in presets:
-            btn = ctk.CTkButton(
+            ctk.CTkButton(
                 row_preset,
                 text=name,
-                width=86,
-                height=30,
-                corner_radius=6,
-                font=self.font_normal,
-                fg_color=("#F1F5F9", "#334155"),
-                text_color=("#334155", "#F8FAFC"),
-                hover_color=("#E2E8F0", "#475569"),
+                width=88,
+                height=32,
                 command=lambda t=tmpl: self._apply_template_preset(t),
-            )
-            btn.pack(side="left", padx=4)
+                **self._secondary_button_kwargs(),
+            ).pack(side="left", padx=(0, 8))
 
         # 模板输入框
-        row_tmpl = ctk.CTkFrame(card, fg_color="transparent")
-        row_tmpl.pack(fill="x", padx=14, pady=4)
+        row_tmpl = ctk.CTkFrame(body, fg_color="transparent")
+        row_tmpl.pack(fill="x", pady=(0, 8))
 
-        ctk.CTkLabel(row_tmpl, text="文案模板：", font=self.font_normal).pack(side="left", padx=(2, 4))
+        ctk.CTkLabel(
+            row_tmpl,
+            text="文案模板",
+            font=self.font_label,
+            text_color=PALETTE["text_secondary"],
+        ).pack(side="left", padx=(0, 8))
+
         self.entry_template = ctk.CTkEntry(
             row_tmpl,
-            height=38,
+            height=36,
             corner_radius=8,
             font=self.font_normal,
+            fg_color=PALETTE["surface"],
+            border_color=PALETTE["border"],
+            text_color=PALETTE["text_primary"],
         )
         self.entry_template.insert(0, self.config_data.get("template", "本次作业的错题题号为：{nums}"))
-        self.entry_template.pack(side="left", fill="x", expand=True, padx=(4, 0))
+        self.entry_template.pack(side="left", fill="x", expand=True)
         self.entry_template.bind("<KeyRelease>", lambda e: self._on_config_param_changed())
 
-        lbl_placeholder_tip = ctk.CTkLabel(
-            card,
-            text="💡 提示：模板中的 {nums} 会被自动替换为生成的题号，支持随意编写你的个性评语",
+        ctk.CTkLabel(
+            body,
+            text="使用 {nums} 作为题号占位符",
             font=self.font_small,
-            text_color=("#64748B", "#94A3B8"),
-        )
-        lbl_placeholder_tip.pack(anchor="w", padx=18, pady=(2, 8))
+            text_color=PALETTE["text_muted"],
+        ).pack(anchor="w", pady=(0, 12))
 
         # 分隔符与拆分模式
-        row_options = ctk.CTkFrame(card, fg_color="transparent")
-        row_options.pack(fill="x", padx=14, pady=(4, 12))
+        row_options = ctk.CTkFrame(body, fg_color="transparent")
+        row_options.pack(fill="x")
 
-        ctk.CTkLabel(row_options, text="题号分隔符：", font=self.font_normal).pack(side="left", padx=(2, 4))
+        ctk.CTkLabel(
+            row_options,
+            text="题号分隔符",
+            font=self.font_label,
+            text_color=PALETTE["text_secondary"],
+        ).pack(side="left", padx=(0, 8))
+
         self.cbo_sep = ctk.CTkOptionMenu(
             row_options,
             values=["，(中文逗号)", "、(顿号)", ", (英文逗号)", "  (空格)"],
-            width=136,
-            height=34,
+            width=140,
+            height=36,
             corner_radius=8,
-            font=self.font_normal,
+            font=self.font_label,
+            fg_color=PALETTE["surface"],
+            button_color=PALETTE["surface"],
+            button_hover_color=PALETTE["surface_hover"],
+            text_color=PALETTE["text_primary"],
             command=lambda v: self._on_config_param_changed(),
         )
         sep_map_rev = {"，": "，(中文逗号)", "、": "、(顿号)", ", ": ", (英文逗号)", " ": "  (空格)"}
@@ -375,115 +464,143 @@ class ModernHotkeyApp(ctk.CTk):
         self.cbo_sep.set(sep_map_rev.get(cur_sep, "，(中文逗号)"))
         self.cbo_sep.pack(side="left", padx=(0, 16))
 
-        ctk.CTkLabel(row_options, text="数字拆分规则：", font=self.font_normal).pack(side="left", padx=(4, 4))
+        ctk.CTkLabel(
+            row_options,
+            text="数字拆分规则",
+            font=self.font_label,
+            text_color=PALETTE["text_secondary"],
+        ).pack(side="left", padx=(0, 8))
+
         self.cbo_mode = ctk.CTkOptionMenu(
             row_options,
             values=["智能识别 (按题号递增)", "连续数字逐位拆分", "仅按空格/符号分隔"],
-            width=190,
-            height=34,
+            width=192,
+            height=36,
             corner_radius=8,
-            font=self.font_normal,
+            font=self.font_label,
+            fg_color=PALETTE["surface"],
+            button_color=PALETTE["surface"],
+            button_hover_color=PALETTE["surface_hover"],
+            text_color=PALETTE["text_primary"],
             command=lambda v: self._on_config_param_changed(),
         )
-        mode_map_rev = {"smart": "智能识别 (按题号递增)", "continuous": "连续数字逐位拆分", "separated": "仅按空格/符号分隔"}
+        mode_map_rev = {
+            "smart": "智能识别 (按题号递增)",
+            "continuous": "连续数字逐位拆分",
+            "separated": "仅按空格/符号分隔",
+        }
         cur_mode = self.config_data.get("split_mode", "smart")
         self.cbo_mode.set(mode_map_rev.get(cur_mode, "智能识别 (按题号递增)"))
         self.cbo_mode.pack(side="left")
 
     def _build_test_card(self, parent):
-        card = ctk.CTkFrame(parent, corner_radius=14, fg_color=("#FFFFFF", "#1E293B"))
-        card.pack(fill="x", pady=(0, 14), padx=2, ipady=6)
+        card = self._make_card(parent, bottom_gap=8)
+        body = ctk.CTkFrame(card, fg_color="transparent")
+        body.pack(fill="x", padx=16, pady=16)
 
-        lbl_head = ctk.CTkLabel(card, text="🧪 实时测试与预览", font=self.font_subtitle, text_color=("#1E293B", "#F8FAFC"))
-        lbl_head.pack(anchor="w", padx=16, pady=(12, 8))
+        ctk.CTkLabel(
+            body,
+            text="实时测试与预览",
+            font=self.font_section,
+            text_color=PALETTE["text_primary"],
+        ).pack(anchor="w", pady=(0, 12))
 
-        # 测试输入行
-        row_input = ctk.CTkFrame(card, fg_color="transparent")
-        row_input.pack(fill="x", padx=14, pady=4)
+        row_input = ctk.CTkFrame(body, fg_color="transparent")
+        row_input.pack(fill="x", pady=(0, 12))
 
-        ctk.CTkLabel(row_input, text="输入测试：", font=self.font_normal).pack(side="left", padx=(2, 4))
+        ctk.CTkLabel(
+            row_input,
+            text="输入测试",
+            font=self.font_label,
+            text_color=PALETTE["text_secondary"],
+        ).pack(side="left", padx=(0, 8))
+
         self.entry_test = ctk.CTkEntry(
             row_input,
-            height=38,
+            height=36,
             corner_radius=8,
-            font=self.font_normal,
-            placeholder_text="输入 135 或 135qqq 测试...",
+            font=self.font_mono,
+            fg_color=PALETTE["surface"],
+            border_color=PALETTE["border"],
+            text_color=PALETTE["text_primary"],
+            placeholder_text="输入 135 或 135qqq",
         )
         self.entry_test.insert(0, "135qqq")
-        self.entry_test.pack(side="left", fill="x", expand=True, padx=4)
+        self.entry_test.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.entry_test.bind("<KeyRelease>", lambda e: self._update_test_preview())
 
-        btn_test_run = ctk.CTkButton(
+        ctk.CTkButton(
             row_input,
             text="转换预览",
             width=88,
-            height=38,
-            corner_radius=8,
-            font=self.font_normal,
+            height=36,
             command=self._update_test_preview,
-        )
-        btn_test_run.pack(side="left", padx=(4, 0))
+            **self._secondary_button_kwargs(),
+        ).pack(side="left")
 
-        # 预览卡片
         preview_box = ctk.CTkFrame(
-            card,
-            corner_radius=10,
-            fg_color=("#F8FAFC", "#0F172A"),
+            body,
+            corner_radius=8,
+            fg_color=PALETTE["surface"],
             border_width=1,
-            border_color=("#E2E8F0", "#334155"),
+            border_color=PALETTE["border"],
         )
-        preview_box.pack(fill="x", padx=14, pady=(10, 12), ipady=8)
+        preview_box.pack(fill="x")
 
-        row_prev_head = ctk.CTkFrame(preview_box, fg_color="transparent")
-        row_prev_head.pack(fill="x", padx=12, pady=(4, 4))
-        ctk.CTkLabel(row_prev_head, text="结果预览：", font=self.font_small, text_color=("#64748B", "#94A3B8")).pack(side="left")
+        preview_inner = ctk.CTkFrame(preview_box, fg_color="transparent")
+        preview_inner.pack(fill="x", padx=12, pady=12)
 
-        btn_copy = ctk.CTkButton(
+        row_prev_head = ctk.CTkFrame(preview_inner, fg_color="transparent")
+        row_prev_head.pack(fill="x", pady=(0, 8))
+
+        ctk.CTkLabel(
             row_prev_head,
-            text="📋 一键复制",
-            width=86,
-            height=28,
-            corner_radius=6,
-            font=self.font_normal,
-            fg_color=("#E2E8F0", "#334155"),
-            text_color=("#1E293B", "#F8FAFC"),
-            hover_color=("#CBD5E1", "#475569"),
+            text="输出结果",
+            font=self.font_small,
+            text_color=PALETTE["text_muted"],
+        ).pack(side="left")
+
+        ctk.CTkButton(
+            row_prev_head,
+            text="复制结果",
+            width=80,
+            height=32,
             command=self._copy_preview_result,
-        )
-        btn_copy.pack(side="right")
+            **self._secondary_button_kwargs(),
+        ).pack(side="right")
 
         self.lbl_preview_result = ctk.CTkLabel(
-            preview_box,
+            preview_inner,
             text="",
-            font=self.font_bold,
-            text_color=("#0F172A", "#F1F5F9"),
+            font=self.font_preview,
+            text_color=PALETTE["text_primary"],
             wraplength=580,
             justify="left",
         )
-        self.lbl_preview_result.pack(anchor="w", padx=12, pady=(2, 6))
+        self.lbl_preview_result.pack(anchor="w")
 
-        # 初始预览
         self._update_test_preview()
 
     def _build_footer(self, parent):
         footer = ctk.CTkFrame(parent, height=48, fg_color="transparent")
-        footer.pack(fill="x", side="bottom", padx=18, pady=(4, 12))
+        footer.pack(fill="x", side="bottom", padx=24, pady=(4, 16))
 
         self.switch_topmost = ctk.CTkSwitch(
             footer,
             text="窗口置顶",
-            font=self.font_normal,
+            font=self.font_label,
+            text_color=PALETTE["text_secondary"],
+            progress_color=PALETTE["accent"],
             command=self._toggle_topmost,
         )
         self.switch_topmost.pack(side="left")
 
-        lbl_guide = ctk.CTkLabel(
+        ctk.CTkLabel(
             footer,
-            text="✨ 在任意软件中直接输入 135qqq，文字瞬间自动展开！",
-            font=self.font_bold,
-            text_color=("#2563EB", "#60A5FA"),
-        )
-        lbl_guide.pack(side="right")
+            text="后台运行中，在任意输入框键入即可触发",
+            font=self.font_small,
+            text_color=PALETTE["text_muted"],
+        ).pack(side="right")
 
     # ---------------- 交互业务逻辑 ----------------
 
@@ -500,9 +617,9 @@ class ModernHotkeyApp(ctk.CTk):
         val = self.cbo_sep.get()
         if "顿号" in val:
             return "、"
-        elif "英文逗号" in val:
+        if "英文逗号" in val:
             return ", "
-        elif "空格" in val:
+        if "空格" in val:
             return " "
         return "，"
 
@@ -510,7 +627,7 @@ class ModernHotkeyApp(ctk.CTk):
         val = self.cbo_mode.get()
         if "逐位" in val:
             return "continuous"
-        elif "仅按空格" in val:
+        if "仅按空格" in val:
             return "separated"
         return "smart"
 
@@ -549,16 +666,18 @@ class ModernHotkeyApp(ctk.CTk):
         numbers = parse_numbers(raw_text, split_mode)
         if numbers:
             result = format_output(numbers, template, separator)
+            self.lbl_preview_result.configure(text=result, text_color=PALETTE["text_primary"])
         else:
-            result = "（等待输入数字... 例如输入 135 或 135qqq）"
-
-        self.lbl_preview_result.configure(text=result)
+            self.lbl_preview_result.configure(
+                text="输入数字后在此查看转换结果",
+                text_color=PALETTE["text_muted"],
+            )
 
     def _copy_preview_result(self):
         content = self.lbl_preview_result.cget("text").strip()
-        if content and not content.startswith("（"):
+        if content and content != "输入数字后在此查看转换结果":
             pyperclip.copy(content)
-            messagebox.showinfo("已复制", "转换结果已复制到剪贴板！")
+            messagebox.showinfo("已复制", "转换结果已复制到剪贴板")
 
     def _toggle_topmost(self):
         self.attributes("-topmost", bool(self.switch_topmost.get()))
@@ -572,29 +691,13 @@ class ModernHotkeyApp(ctk.CTk):
     def _on_hotkey_status_changed(self, status_text: str, is_active: bool):
         def update():
             if is_active:
-                self.lbl_status_dot.configure(text_color=("#16A34A", "#4ADE80"))
-                self.lbl_status_text.configure(text=status_text, text_color=("#166534", "#D1FAE5"))
-                self.status_card.configure(
-                    fg_color=("#F0FDF4", "#064E3B"),
-                    border_color=("#BBF7D0", "#059669"),
-                )
-                self.btn_toggle_listen.configure(
-                    text="暂停监听",
-                    fg_color=("#DC2626", "#B91C1C"),
-                    hover_color=("#B91C1C", "#991B1B"),
-                )
+                self.lbl_status_dot.configure(text_color=PALETTE["positive"])
+                self.lbl_status_text.configure(text=status_text, text_color=PALETTE["text_primary"])
+                self.btn_toggle_listen.configure(text="暂停监听")
             else:
-                self.lbl_status_dot.configure(text_color=("#DC2626", "#F87171"))
-                self.lbl_status_text.configure(text=status_text, text_color=("#991B1B", "#FCA5A5"))
-                self.status_card.configure(
-                    fg_color=("#FEF2F2", "#450A0A"),
-                    border_color=("#FECACA", "#991B1B"),
-                )
-                self.btn_toggle_listen.configure(
-                    text="恢复监听",
-                    fg_color=("#16A34A", "#15803D"),
-                    hover_color=("#15803D", "#166534"),
-                )
+                self.lbl_status_dot.configure(text_color=PALETTE["negative"])
+                self.lbl_status_text.configure(text=status_text, text_color=PALETTE["text_secondary"])
+                self.btn_toggle_listen.configure(text="恢复监听")
 
         self.after(0, update)
 
@@ -603,8 +706,11 @@ class ModernHotkeyApp(ctk.CTk):
             return
 
         self.is_recording = True
-        self.btn_record.configure(text="⌛ 请按键...", fg_color=("#D97706", "#B45309"))
-        self.lbl_hk_tip.configure(text="👉 正在监听键盘... 请直接按下你的快捷组合键（如 F8 或 Alt+Q，按 Esc 取消）", text_color=("#D97706", "#FBBF24"))
+        self.btn_record.configure(text="等待按键...", fg_color=PALETTE["warning"])
+        self.lbl_hk_tip.configure(
+            text="请按下组合键（如 Alt+Q 或 F8），按 Esc 取消",
+            text_color=PALETTE["warning"],
+        )
 
         def worker():
             try:
@@ -618,26 +724,26 @@ class ModernHotkeyApp(ctk.CTk):
 
     def _on_hotkey_recorded(self, recorded_hotkey: str):
         self.is_recording = False
-        self.btn_record.configure(text="🎙️ 录制新按键", fg_color=("#3B82F6", "#2563EB"))
+        self.btn_record.configure(text="录制按键", fg_color=PALETTE["accent"])
 
         if recorded_hotkey.lower() == "esc":
-            self.lbl_hk_tip.configure(text="已取消录制，快捷键未改变", text_color=("#64748B", "#94A3B8"))
+            self.lbl_hk_tip.configure(text="已取消录制，快捷键未改变", text_color=PALETTE["text_muted"])
             return
 
         new_hotkey = recorded_hotkey.strip().lower()
         self.entry_hotkey.delete(0, tk.END)
-        self.entry_hotkey.insert(0, new_hotkey.upper())
+        self.entry_hotkey.insert(0, new_hotkey)
         self._apply_new_hotkey(new_hotkey)
 
     def _on_record_failed(self, err_msg: str):
         self.is_recording = False
-        self.btn_record.configure(text="🎙️ 录制新按键", fg_color=("#3B82F6", "#2563EB"))
-        self.lbl_hk_tip.configure(text=f"录制按键失败: {err_msg}", text_color=("#DC2626", "#F87171"))
+        self.btn_record.configure(text="录制按键", fg_color=PALETTE["accent"])
+        self.lbl_hk_tip.configure(text=f"录制按键失败：{err_msg}", text_color=PALETTE["negative"])
 
     def _save_manual_hotkey(self):
         raw_key = self.entry_hotkey.get().strip().lower()
         if not raw_key:
-            messagebox.showwarning("提示", "快捷键不能为空！")
+            messagebox.showwarning("提示", "快捷键不能为空")
             return
         self._apply_new_hotkey(raw_key)
 
@@ -646,9 +752,15 @@ class ModernHotkeyApp(ctk.CTk):
         if success:
             self.config_data["hotkey"] = hotkey_str
             save_config(self.config_data)
-            self.lbl_hk_tip.configure(text=f"✅ 快捷键已更新为: {hotkey_str.upper()}", text_color=("#16A34A", "#4ADE80"))
+            self.lbl_hk_tip.configure(
+                text=f"快捷键已更新为 {hotkey_str}",
+                text_color=PALETTE["positive"],
+            )
         else:
-            self.lbl_hk_tip.configure(text=f"❌ 快捷键 '{hotkey_str.upper()}' 注册失败", text_color=("#DC2626", "#F87171"))
+            self.lbl_hk_tip.configure(
+                text=f"快捷键 {hotkey_str} 注册失败",
+                text_color=PALETTE["negative"],
+            )
 
     def _on_close(self):
         try:
