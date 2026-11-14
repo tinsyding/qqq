@@ -36,46 +36,9 @@ jobs:
           path: dist/*.exe
           if-no-files-found: error
 
-  build-android:
-    name: Build Android APK
-    runs-on: ubuntu-latest
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-    defaults:
-      run:
-        working-directory: android_app
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.7"
-
-      - name: Run unit tests and build APK
-        run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
-
-      - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk "错题快速转换助手-Android.apk"
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-apk
-          path: android_app/错题快速转换助手-Android.apk
-          if-no-files-found: error
-
   release:
     name: Publish Release
-    needs: [build-windows, build-android]
-    if: always() && (needs.build-windows.result == 'success' || needs.build-android.result == 'success')
+    needs: build-windows
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
@@ -93,5 +56,4 @@ jobs:
             由 GitHub Actions 自动构建发布。
 
             - Windows：错题快速转换助手.exe
-            - Android：错题快速转换助手-Android.apk
           files: release/*

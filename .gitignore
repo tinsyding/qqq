@@ -23,12 +23,3 @@ Thumbs.db
 
 # 本工具（Command Code）的本地会话数据
 .commandcode/
-
-# Android / Gradle
-.gradle/
-local.properties
-.kotlin/
-*.apk
-*.aab
-*.jks
-*.keystore
