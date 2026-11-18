@@ -18,13 +18,20 @@ import keyboard
 import mouse
 import pyperclip
 
-# 配置文件路径（兼容 PyInstaller 单文件打包，优先保存在 EXE 同级目录）
+# 配置文件路径（优先保存在 EXE 同级目录；若同级目录只读则自动回退至用户 AppData 目录）
 _BASE_DIR = (
     os.path.dirname(os.path.abspath(sys.executable))
     if getattr(sys, "frozen", False)
     else os.path.dirname(os.path.abspath(__file__))
 )
+_FALLBACK_DIR = os.path.join(
+    os.environ.get("APPDATA")
+    or os.environ.get("LOCALAPPDATA")
+    or os.path.expanduser("~"),
+    "错题快速转换助手",
+)
 CONFIG_FILE = os.path.join(_BASE_DIR, "config.json")
+FALLBACK_CONFIG_FILE = os.path.join(_FALLBACK_DIR, "config.json")
 
 DEFAULT_CONFIG = {
     "hotkey": "alt+q",
@@ -38,30 +45,45 @@ DEFAULT_CONFIG = {
 }
 
 
-def load_config() -> dict:
-    """加载配置文件，若不存在则创建默认配置"""
-    if not os.path.exists(CONFIG_FILE):
-        save_config(DEFAULT_CONFIG)
-        return DEFAULT_CONFIG.copy()
+def _safe_stderr(msg: str) -> None:
+    """在无控制台 (--noconsole) 模式下安全输出错误信息，避免 sys.stderr 为 None 时崩溃"""
     try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            config = DEFAULT_CONFIG.copy()
-            config.update(data)
-            return config
+        if sys.stderr is not None:
+            print(msg, file=sys.stderr)
     except Exception:
-        return DEFAULT_CONFIG.copy()
+        pass
+
+
+def load_config() -> dict:
+    """加载配置文件，优先读取 EXE 同级目录，其次回退目录；若均不存在则尝试创建默认配置"""
+    for candidate in (CONFIG_FILE, FALLBACK_CONFIG_FILE):
+        if os.path.exists(candidate):
+            try:
+                with open(candidate, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    config = DEFAULT_CONFIG.copy()
+                    config.update(data)
+                    return config
+            except Exception:
+                continue
+
+    save_config(DEFAULT_CONFIG)
+    return DEFAULT_CONFIG.copy()
 
 
 def save_config(config: dict) -> bool:
-    """保存配置到本地 json 文件"""
-    try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
-        return True
-    except Exception as e:
-        print(f"保存配置失败: {e}", file=sys.stderr)
-        return False
+    """保存配置到本地 json 文件；若当前目录无写入权限则自动回退到 AppData"""
+    for target in (CONFIG_FILE, FALLBACK_CONFIG_FILE):
+        try:
+            parent = os.path.dirname(target)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(target, "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            _safe_stderr(f"保存配置到 {target} 失败: {e}")
+    return False
 
 
 def smart_split_digits(digits: str) -> List[str]:
@@ -431,7 +453,7 @@ class HotkeyManager:
             keyboard.send("ctrl+v")
 
         except Exception as e:
-            print(f"触发词替换出错: {e}", file=sys.stderr)
+            _safe_stderr(f"触发词替换出错: {e}")
         finally:
             self.key_buffer.is_replacing = False
 
@@ -504,6 +526,6 @@ class HotkeyManager:
                 pyperclip.copy(original_clipboard)
 
         except Exception as e:
-            print(f"快捷键替换出错: {e}", file=sys.stderr)
+            _safe_stderr(f"快捷键替换出错: {e}")
         finally:
             self.key_buffer.is_replacing = False

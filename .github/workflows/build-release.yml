@@ -27,13 +27,17 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Build EXE
-        run: python -m PyInstaller --noconfirm --clean "错题快速转换助手.spec"
+        run: |
+          python -m PyInstaller --noconfirm --clean "错题快速转换助手.spec"
+          Compress-Archive -Path "dist\错题快速转换助手.exe" -DestinationPath "dist\CuotiHelper-Windows-x64.zip" -Force
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-exe
-          path: dist/*.exe
+          path: |
+            dist/*.exe
+            dist/*.zip
           if-no-files-found: error
 
   release:
@@ -55,5 +59,6 @@ jobs:
           body: |
             由 GitHub Actions 自动构建发布。
 
-            - Windows：错题快速转换助手.exe
+            - 推荐下载压缩包：`CuotiHelper-Windows-x64.zip`（解压后即为 `错题快速转换助手.exe`，避免浏览器将纯中文名文件重命名为 `default.exe` 或误报拦截）
+            - 单文件直链：`错题快速转换助手.exe`
           files: release/*

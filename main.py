@@ -4,24 +4,141 @@ main.py
 基于 CustomTkinter 构建，提供后缀触发词与全局快捷键配置、文案模板定制及实时预览。
 """
 
+import ctypes
 import os
 import sys
+import tempfile
 import threading
 import tkinter as tk
 import traceback
 from tkinter import messagebox
 
-import customtkinter as ctk
-import keyboard
-import pyperclip
 
-from core_engine import (
-    HotkeyManager,
-    format_output,
-    load_config,
-    parse_numbers,
-    save_config,
-)
+class _NullStream:
+    """在 PyInstaller --noconsole (console=False) 模式下为 None 的 stdout/stderr 提供安全空流"""
+
+    encoding = "utf-8"
+
+    def write(self, _data) -> int:
+        return 0
+
+    def flush(self) -> None:
+        pass
+
+    def isatty(self) -> bool:
+        return False
+
+
+if sys.stdout is None:
+    sys.stdout = _NullStream()
+if sys.stderr is None:
+    sys.stderr = _NullStream()
+
+
+def _report_fatal_error(err: BaseException) -> None:
+    """在无控制台模式下记录启动异常并弹窗提示（支持回退目录与原生 Win32 弹窗）"""
+    base_dir = (
+        os.path.dirname(os.path.abspath(sys.executable))
+        if getattr(sys, "frozen", False)
+        else os.path.dirname(os.path.abspath(__file__))
+    )
+    appdata_dir = os.path.join(
+        os.environ.get("APPDATA")
+        or os.environ.get("LOCALAPPDATA")
+        or os.path.expanduser("~"),
+        "错题快速转换助手",
+    )
+    candidates = [
+        os.path.join(base_dir, "crash.log"),
+        os.path.join(appdata_dir, "crash.log"),
+        os.path.join(tempfile.gettempdir(), "错题快速转换助手_crash.log"),
+    ]
+    detail = traceback.format_exc()
+    saved_log_path = None
+    for path in candidates:
+        try:
+            parent = os.path.dirname(path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(detail)
+            saved_log_path = path
+            break
+        except Exception:
+            continue
+
+    log_hint = f"\n\n详细日志已保存至：\n{saved_log_path}" if saved_log_path else f"\n\n错误详情：\n{detail[:600]}"
+    msg = f"程序启动异常：{err}{log_hint}"
+
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("启动失败", msg)
+        root.destroy()
+        return
+    except Exception:
+        pass
+
+    if sys.platform.startswith("win"):
+        try:
+            ctypes.windll.user32.MessageBoxW(0, msg, "错题快速转换助手 - 启动失败", 0x10)
+        except Exception:
+            pass
+
+
+try:
+    import darkdetect
+
+    _orig_darkdetect_theme = getattr(darkdetect, "theme", None)
+
+    def _safe_darkdetect_theme():
+        try:
+            res = _orig_darkdetect_theme() if callable(_orig_darkdetect_theme) else "Light"
+            return res if res in ("Dark", "Light") else "Light"
+        except Exception:
+            return "Light"
+
+    darkdetect.theme = _safe_darkdetect_theme
+
+    import customtkinter as ctk
+    from customtkinter.windows.widgets.scaling.scaling_tracker import ScalingTracker
+
+    _orig_activate_dpi = ScalingTracker.activate_high_dpi_awareness
+    _orig_get_dpi_scaling = ScalingTracker.get_window_dpi_scaling
+
+    @classmethod
+    def _safe_activate_dpi(cls):
+        try:
+            _orig_activate_dpi()
+        except Exception:
+            cls.deactivate_automatic_dpi_awareness = True
+
+    @classmethod
+    def _safe_get_window_dpi_scaling(cls, window) -> float:
+        try:
+            val = _orig_get_dpi_scaling(window)
+            if not isinstance(val, (int, float)) or val <= 0.25 or val > 5.0:
+                return 1.0
+            return float(val)
+        except Exception:
+            return 1.0
+
+    ScalingTracker.activate_high_dpi_awareness = _safe_activate_dpi
+    ScalingTracker.get_window_dpi_scaling = _safe_get_window_dpi_scaling
+
+    import keyboard
+    import pyperclip
+
+    from core_engine import (
+        HotkeyManager,
+        format_output,
+        load_config,
+        parse_numbers,
+        save_config,
+    )
+except Exception as _boot_exc:
+    _report_fatal_error(_boot_exc)
+    sys.exit(1)
 
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
@@ -775,29 +892,6 @@ class ModernHotkeyApp(ctk.CTk):
         except Exception:
             pass
         self.destroy()
-
-
-def _report_fatal_error(err: Exception):
-    """在无控制台模式下记录启动异常并弹窗提示"""
-    base_dir = (
-        os.path.dirname(os.path.abspath(sys.executable))
-        if getattr(sys, "frozen", False)
-        else os.path.dirname(os.path.abspath(__file__))
-    )
-    log_path = os.path.join(base_dir, "crash.log")
-    detail = traceback.format_exc()
-    try:
-        with open(log_path, "w", encoding="utf-8") as f:
-            f.write(detail)
-    except Exception:
-        pass
-    try:
-        root = tk.Tk()
-        root.withdraw()
-        messagebox.showerror("启动失败", f"程序启动异常：{err}\n\n详细日志已保存至：\n{log_path}")
-        root.destroy()
-    except Exception:
-        pass
 
 
 if __name__ == "__main__":
